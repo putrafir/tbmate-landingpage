@@ -1,12 +1,10 @@
 "use client";
 
 import React from "react";
-// 💡 PERUBAHAN: Import Variants dari framer-motion
 import { motion, Variants } from "framer-motion";
 
 export default function HeroSection() {
   // ================= KONFIGURASI ANIMASI =================
-  // 💡 PERUBAHAN: Tambahkan ': Variants' ke variabelnya
   const textContainer: Variants = {
     hidden: { opacity: 0 },
     visible: {
@@ -18,7 +16,6 @@ export default function HeroSection() {
     },
   };
 
-  // 💡 PERUBAHAN: Tambahkan ': Variants' ke variabelnya
   const textItem: Variants = {
     hidden: { opacity: 0, y: 30 },
     visible: {
@@ -30,29 +27,36 @@ export default function HeroSection() {
 
   return (
     <section id="home" className="relative w-full overflow-hidden bg-[#FBFDFB]">
+      {/* 💡 TRIK RAHASIA: Pakai CSS murni untuk animasi blur raksasa agar tidak ngelag */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        @keyframes slowFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .glow-effect-1 { animation: slowFadeIn 1.5s ease-out forwards; will-change: opacity; }
+        .glow-effect-2 { animation: slowFadeIn 1.5s ease-out 0.3s forwards; opacity: 0; will-change: opacity; }
+      `,
+        }}
+      />
+
       {/* ================= BACKGROUND GLOW EFFECTS ================= */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1.5 }}
-        className="absolute top-[-5%] left-[-15%] w-[400px] md:w-[700px] h-[400px] md:h-[700px] rounded-full bg-[#2E7D32]/20 blur-[70px] md:blur-[100px] pointer-events-none z-0"
-      />
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1.5, delay: 0.3 }}
-        className="absolute bottom-[5%] right-[-10%] w-[500px] md:w-[800px] h-[500px] md:h-[800px] rounded-full bg-[#0052CC]/15 blur-[70px] md:blur-[100px] pointer-events-none z-0"
-      />
+      {/* 💡 Menggunakan div biasa dengan class CSS dari style di atas */}
+      <div className="absolute top-[-5%] left-[-15%] w-[400px] md:w-[700px] h-[400px] md:h-[700px] rounded-full bg-[#2E7D32]/20 blur-[70px] md:blur-[100px] pointer-events-none z-0 glow-effect-1" />
+      <div className="absolute bottom-[5%] right-[-10%] w-[500px] md:w-[800px] h-[500px] md:h-[800px] rounded-full bg-[#0052CC]/15 blur-[70px] md:blur-[100px] pointer-events-none z-0 glow-effect-2" />
       {/* ========================================================= */}
 
       <main className="relative z-10 max-w-[1200px] mx-auto px-6 md:px-8 lg:px-12 pt-32 pb-16 lg:pt-36 lg:pb-20 min-h-screen flex flex-col lg:flex-row items-center justify-between gap-10 lg:gap-12">
         {/* ================= BAGIAN TEKS ================= */}
+        {/* 💡 Tambahan willChange agar browser tidak kaget saat animasi mulai */}
         <motion.div
           variants={textContainer}
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
           className="flex-1 max-w-xl flex flex-col items-center lg:items-start text-center lg:text-left"
+          style={{ willChange: "transform, opacity" }}
         >
           <motion.h1
             variants={textItem}
@@ -122,12 +126,14 @@ export default function HeroSection() {
         </motion.div>
 
         {/* ================= BAGIAN GAMBAR ================= */}
+        {/* 💡 Dibuang scale-nya, murni geser ke x saja biar lebih ringan */}
         <motion.div
-          initial={{ opacity: 0, x: 50, scale: 0.95 }}
-          whileInView={{ opacity: 1, x: 0, scale: 1 }}
+          initial={{ opacity: 0, x: 50 }}
+          whileInView={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
           viewport={{ once: true, amount: 0.2 }}
           className="flex-1 w-full flex justify-center lg:justify-end mt-8 lg:mt-0 relative z-10"
+          style={{ willChange: "transform, opacity" }}
         >
           <img
             src="/display phone tbmate.webp"
