@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --primary-green: #2e7d32; /* Added primary green color */
 }
 
 @theme inline {
@@ -16,6 +17,7 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --primary-green: #2e7d32; /* Ensure consistency in dark mode */
   }
 }
 
@@ -23,4 +25,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-primary-green {
+    color: var(--primary-green);
+  }
+  .bg-primary-green {
+    background-color: var(--primary-green);
+  }
 }
