@@ -1,10 +1,10 @@
 import React from "react";
-import Navbar from "./components/Navbar";
-import HeroSection from "./components/HeroSection";
-import FeatureAI from "./components/FeatureAI";
-import Ecosystem from "./components/Ecosystem";
-import Education from "./components/Education";
-import Footer from "./components/Footer";
+import Navbar from "../components/Navbar";
+import HeroSection from "../components/HeroSection";
+import FeatureAI from "../components/FeatureAI";
+import Ecosystem from "../components/Ecosystem";
+import Education from "../components/Education";
+import Footer from "../components/Footer";
 
 export default function TBMateLandingPage() {
   return (

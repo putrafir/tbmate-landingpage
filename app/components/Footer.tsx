@@ -2,6 +2,10 @@
 
 import React from "react";
 import { motion, Variants } from "framer-motion";
+import Link from "next/link"; // 1. Import Link biasa dari Next.js
+
+// 2. Buat komponen MotionLink dengan membungkus Link menggunakan motion
+const MotionLink = motion(Link);
 
 export default function Footer() {
   // ================= KONFIGURASI ANIMASI =================
@@ -34,7 +38,6 @@ export default function Footer() {
       className="w-full bg-[#2E7D32] relative overflow-hidden pt-20 pb-8 lg:pt-24 lg:pb-10"
     >
       {/* ================= EFEK CAHAYA (GLOW) ================= */}
-      {/* Diberi animasi fade in lambat agar munculnya natural */}
       <motion.div
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
@@ -79,7 +82,6 @@ export default function Footer() {
             variants={itemVariants}
             className="flex flex-col sm:flex-row gap-4 w-full md:w-auto shrink-0"
           >
-            {/* 💡 Tombol 1: Hover ditangani Framer Motion, transition-shadow untuk efek bayangan */}
             <motion.button
               whileHover={{ y: -5, transition: { duration: 0.2 } }}
               className="bg-white text-[#2E7D32] font-bold px-6 py-3.5 md:px-8 md:py-4 rounded-xl flex items-center justify-center gap-2 text-sm md:text-base shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:bg-gray-50 hover:shadow-xl transition-shadow duration-300 w-full sm:w-auto"
@@ -100,8 +102,9 @@ export default function Footer() {
               Unduh TBMate
             </motion.button>
 
-            {/* 💡 Tombol 2: Efek hover dikelola dengan cara yang sama */}
-            <motion.button
+            {/* 3. Gunakan MotionLink, tanpa passHref & legacyBehavior */}
+            <MotionLink
+              href="/login"
               whileHover={{ y: -5, transition: { duration: 0.2 } }}
               className="bg-transparent border-2 border-green-400 text-white font-bold px-6 py-3.5 md:px-8 md:py-4 rounded-xl flex items-center justify-center gap-2 text-sm md:text-base hover:bg-green-800 transition-colors duration-300 w-full sm:w-auto"
             >
@@ -112,12 +115,12 @@ export default function Footer() {
               >
                 <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
               </svg>
-              Hubungi Puskesmas
-            </motion.button>
+              Portal Petugas
+            </MotionLink>
           </motion.div>
         </div>
 
-        {/* Bagian Alamat & Copyright (Muncul paling terakhir) */}
+        {/* Bagian Alamat & Copyright */}
         <motion.div
           variants={itemVariants}
           className="border-t border-green-600/60 pt-8 flex flex-col lg:flex-row items-center justify-between text-xs md:text-sm text-green-100/80 gap-6 lg:gap-0"
