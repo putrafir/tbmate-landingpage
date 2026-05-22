@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 // Import Firebase Auth
 import { signOut } from "firebase/auth";
@@ -15,6 +15,19 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  const searchParams = useSearchParams();
+  const currentSearch = searchParams.get("search") || "";
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (e.target.value) {
+      params.set("search", e.target.value);
+    } else {
+      params.delete("search");
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
   // Fungsi untuk menangani proses logout
   const handleLogout = async () => {
@@ -127,7 +140,9 @@ export default function DashboardLayout({
               <input
                 type="text"
                 placeholder="Cari data pasien..."
-                className="pl-10 pr-4 py-2.5 bg-white border border-gray-100 rounded-full text-sm w-[280px] focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/20"
+                value={currentSearch}
+                onChange={handleSearchChange}
+                className="pl-10 pr-4 py-2.5 bg-white text-gray-500 border border-gray-300 rounded-full text-sm w-[280px] focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/20"
               />
               <svg
                 className="w-4 h-4 text-gray-400 absolute left-4 top-3"
