@@ -10,7 +10,9 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
+import { getApps, initializeApp } from "firebase/app";
+import { db, app } from "../../../lib/firebase";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { useSearchParams, useRouter } from "next/navigation";
 
 interface Patient {
@@ -580,14 +582,15 @@ export default function DataPasienPage() {
     message: "",
   });
 
-  // State untuk form input
+  // 1. 🔹 TAMBAHKAN PASSWORD KE STATE
   const [formData, setFormData] = useState({
     fullName: "",
     nickName: "",
     email: "",
-    ageGroup: "Dewasa", // Dewasa / Anak
+    password: "", // <-- Baru
+    ageGroup: "Dewasa",
     kategoriObat: "Kategori 1",
-    weight: "", // 🔹 TAMBAHAN: Untuk input berat badan
+    weight: "",
     reminderTime: "08:00",
   });
 
@@ -600,34 +603,62 @@ export default function DataPasienPage() {
 
   const handleDaftarPasien = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.fullName || !formData.email || !formData.weight) {
-      alert("Nama, Email, dan Berat Badan wajib diisi!");
+    if (
+      !formData.fullName ||
+      !formData.email ||
+      !formData.password ||
+      !formData.weight
+    ) {
+      alert("Nama, Email, Password, dan Berat Badan wajib diisi!");
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      alert("Password minimal harus 6 karakter sesuai standar Firebase!");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // 1. Siapkan Waktu dan ID
+      // =========================================================
+      // 🔥 1. BUAT AKUN FIREBASE AUTH (Tanpa Me-logout Admin)
+      // =========================================================
+      // Kita buat 'SecondaryApp' bayangan untuk mendaftarkan pasien
+      const secondaryApp =
+        getApps().find((a) => a.name === "SecondaryApp") ||
+        initializeApp(app.options, "SecondaryApp");
+      const secondaryAuth = getAuth(secondaryApp);
+
+      const userCredential = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        formData.email,
+        formData.password,
+      );
+      const authUID = userCredential.user.uid; // 🔹 Ini UID asli dari Auth!
+
+      // Logout dari aplikasi bayangan agar bersih
+      await secondaryAuth.signOut();
+
+      // =========================================================
+      // 🔥 2. PERSIAPAN DATA FIRESTORE
+      // =========================================================
       const timestampNow = Date.now();
-      const newUID = `USR-${timestampNow}`;
+      const displayUID = `USR-${timestampNow}`; // Tetap pakai ini untuk visual/display ID
       const today = new Date();
 
-      // 2. Konversi waktu dari 24 jam (Form web) ke 12 jam AM/PM (Flutter)
       const [hourStr, minuteStr] = formData.reminderTime.split(":");
       let hour = parseInt(hourStr, 10);
       const ampm = hour >= 12 ? "PM" : "AM";
       hour = hour % 12 || 12;
       const formattedReminderTime = `${hour.toString().padStart(2, "0")}:${minuteStr} ${ampm}`;
 
-      // =========================================================
-      // 🔥 LOGIKA DOSIS BERAT BADAN (Diterjemahkan 1:1 dari Flutter TBMate)
-      // =========================================================
       let tahapIntensif = "";
       let tahapLanjutan = "";
       let namaObat = "";
       let jumlahTablet = 0;
       const bb = Number(formData.weight);
 
+      // (Logika Dosis Tetap Sama persis dengan sebelumnya)
       if (bb >= 5 && bb <= 9) {
         tahapIntensif = "1 tablet RHZ (75/50/150)";
         tahapLanjutan = "1 tablet RH (75/50)";
@@ -671,14 +702,14 @@ export default function DataPasienPage() {
       }
 
       // =========================================================
-      // 🚀 MULAI PENYIMPANAN BATCH FIREBASE
+      // 🚀 3. MULAI PENYIMPANAN BATCH KE FIRESTORE
       // =========================================================
       const batch = writeBatch(db);
 
-      // A. Simpan Profil Utama Pasien
-      const pasienBaruRef = doc(db, "users", newUID);
+      // A. Simpan Profil (Gunakan authUID sebagai Document ID!)
+      const pasienBaruRef = doc(db, "users", authUID);
       batch.set(pasienBaruRef, {
-        uniqueId: newUID,
+        uniqueId: displayUID, // Disimpan sebagai field data
         email: formData.email,
         role: "Pasien",
         fullName: formData.fullName,
@@ -695,15 +726,16 @@ export default function DataPasienPage() {
         status: "Aktif",
       });
 
-      // B. Generate 56 Hari Fase Intensif (Setiap Hari)
+      // B. Generate 56 Hari Fase Intensif
       for (let i = 0; i < 56; i++) {
         const scheduleDate = new Date(today);
         scheduleDate.setDate(today.getDate() + i);
-        const formattedDate = scheduleDate.toLocaleDateString("en-CA"); // YYYY-MM-DD
+        const formattedDate = scheduleDate.toLocaleDateString("en-CA");
 
-        const jadwalRef = doc(collection(db, `users/${newUID}/jadwal_obat`));
+        // Perhatikan jalurnya sekarang menggunakan authUID
+        const jadwalRef = doc(collection(db, `users/${authUID}/jadwal_obat`));
         batch.set(jadwalRef, {
-          userId: newUID,
+          userId: authUID,
           nama_obat: namaObat,
           fase: "Intensif",
           dosis: tahapIntensif,
@@ -712,13 +744,13 @@ export default function DataPasienPage() {
           status: "Belum diminum",
           tanggal: formattedDate,
           berat_badan: bb,
-          createdAt: today, // Menggunakan waktu yang sama agar seragam
+          createdAt: today,
           verifikasi_ai: "Belum",
           skor_ai: 0,
         });
       }
 
-      // C. Generate 16 Minggu Fase Lanjutan (Hanya Hari ke-1, 3, dan 5)
+      // C. Generate 16 Minggu Fase Lanjutan
       for (let week = 0; week < 16; week++) {
         for (let day = 0; day < 7; day++) {
           if (day === 1 || day === 3 || day === 5) {
@@ -727,10 +759,10 @@ export default function DataPasienPage() {
             const formattedDate = scheduleDate.toLocaleDateString("en-CA");
 
             const jadwalRef = doc(
-              collection(db, `users/${newUID}/jadwal_obat`),
+              collection(db, `users/${authUID}/jadwal_obat`),
             );
             batch.set(jadwalRef, {
-              userId: newUID,
+              userId: authUID,
               nama_obat: namaObat,
               fase: "Lanjutan",
               dosis: tahapLanjutan,
@@ -747,30 +779,35 @@ export default function DataPasienPage() {
         }
       }
 
-      // 4. Eksekusi Total 105 Dokumen (1 User + 56 Intensif + 48 Lanjutan) dalam 1 Detik
       await batch.commit();
 
-      // Tutup form pendaftaran & kosongkan input
       setIsModalOpen(false);
       setFormData({
         fullName: "",
         nickName: "",
         email: "",
+        password: "", // Kosongkan form
         ageGroup: "Dewasa",
         kategoriObat: "Kategori 1",
         weight: "",
         reminderTime: "08:00",
       });
 
-      // 🔹 TAMPILKAN MODAL SUKSES KUSTOM (Jangan langsung di-reload)
       setSuccessModal({
         isOpen: true,
         title: "Pendaftaran Berhasil!",
-        message: `Pasien ${formData.fullName} berhasil didaftarkan. Total 104 jadwal obat telah dibuat otomatis dengan resep ${namaObat}.`,
+        message: `Pasien ${formData.fullName} berhasil didaftarkan. Akun login telah dibuat dan 104 jadwal obat telah disusun.`,
       });
+
+      setTimeout(() => {
+        setSuccessModal({ isOpen: false, title: "", message: "" });
+        window.location.reload(); // Refresh halaman secara otomatis
+      }, 3000);
     } catch (error) {
       console.error("Gagal mendaftar pasien:", error);
-      alert("Terjadi kesalahan saat mendaftarkan pasien.");
+      alert(
+        "Terjadi kesalahan! Pastikan email belum pernah terdaftar sebelumnya.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -778,7 +815,6 @@ export default function DataPasienPage() {
 
   return (
     <div className="space-y-8 relative">
-      {/* Header Halaman */}
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -796,7 +832,6 @@ export default function DataPasienPage() {
         </button>
       </div>
 
-      {/* 3. Komponen Tabel Pasien */}
       <Suspense
         fallback={
           <div className="text-center py-10 text-gray-500">
@@ -807,16 +842,13 @@ export default function DataPasienPage() {
         <PatientListContent />
       </Suspense>
 
-      {/* 🔹 MODAL PENDAFTARAN PASIEN BARU */}
+      {/* MODAL PENDAFTARAN PASIEN BARU */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Latar Belakang Gelap */}
           <div
             className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"
             onClick={() => !isSubmitting && setIsModalOpen(false)}
           ></div>
-
-          {/* Kotak Form */}
           <div className="relative bg-white rounded-[24px] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 bg-green-50/50 border-b border-green-100 flex justify-between items-center">
               <div>
@@ -852,7 +884,6 @@ export default function DataPasienPage() {
                     className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
                     Nama Panggilan *
@@ -869,19 +900,36 @@ export default function DataPasienPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-                  Alamat Email *
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                  placeholder="budi@example.com (Untuk Login Mobile)"
-                  className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
-                />
+              {/* 2. 🔹 FORM INPUT EMAIL & PASSWORD (DISATUKAN) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Alamat Email *
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="budi@example.com"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Password Login *
+                  </label>
+                  <input
+                    type="text"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Minimal 6 karakter"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -899,7 +947,6 @@ export default function DataPasienPage() {
                     <option value="Anak">Anak-anak</option>
                   </select>
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
                     Kategori Obat
@@ -932,7 +979,6 @@ export default function DataPasienPage() {
                     className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
                     Jam Pengingat vDOT
@@ -950,11 +996,9 @@ export default function DataPasienPage() {
 
               <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl mt-2">
                 <p className="text-xs text-blue-800 leading-relaxed font-medium">
-                  <span className="font-bold">Catatan Sistem:</span> Pasien baru
-                  otomatis akan dimasukkan ke{" "}
-                  <span className="font-bold">Fase Intensif</span> dengan target
-                  56 dosis (Hari). UID Pasien akan di-generate otomatis oleh
-                  sistem setelah formulir disimpan.
+                  <span className="font-bold">Catatan Sistem:</span> Akun login
+                  Firebase Auth otomatis dibuat untuk pasien ini menggunakan
+                  email & password di atas.
                 </p>
               </div>
 
@@ -972,30 +1016,7 @@ export default function DataPasienPage() {
                   disabled={isSubmitting}
                   className="px-6 py-2.5 bg-[#2E7D32] hover:bg-green-800 text-white text-sm font-bold rounded-xl shadow-md transition-all flex items-center justify-center min-w-[140px] disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  {isSubmitting ? (
-                    <svg
-                      className="animate-spin h-5 w-5 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                  ) : (
-                    "Simpan Data Pasien"
-                  )}
+                  {isSubmitting ? "Memproses..." : "Simpan Data Pasien"}
                 </button>
               </div>
             </form>
@@ -1003,6 +1024,7 @@ export default function DataPasienPage() {
         </div>
       )}
 
+      {/* 💥 MODAL SUKSES (AUTO-CLOSE) */}
       {successModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"></div>
@@ -1027,19 +1049,34 @@ export default function DataPasienPage() {
             <h3 className="text-xl font-bold text-gray-900 mb-2">
               {successModal.title}
             </h3>
-            <p className="text-sm text-gray-500 leading-relaxed mb-8">
+            <p className="text-sm text-gray-500 leading-relaxed mb-6">
               {successModal.message}
             </p>
 
-            <button
-              onClick={() => {
-                setSuccessModal({ ...successModal, isOpen: false });
-                window.location.reload();
-              }}
-              className="w-full py-3 bg-[#2E7D32] hover:bg-green-800 text-white text-sm font-bold rounded-xl shadow-md transition-all"
-            >
-              Tutup & Refresh Data
-            </button>
+            {/* 🔹 PENGGANTI TOMBOL: Indikator Auto-Refresh */}
+            <div className="flex items-center justify-center gap-2 text-sm font-bold text-[#2E7D32] animate-pulse">
+              <svg
+                className="animate-spin h-5 w-5"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              Menyiapkan data pasien...
+            </div>
           </div>
         </div>
       )}

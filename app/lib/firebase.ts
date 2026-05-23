@@ -12,7 +12,7 @@ const firebaseConfig = {
 };
 
 // Singleton pattern: Cegah inisialisasi ganda saat Next.js me-refresh halaman (Hot Reload)
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Ekspor layanan yang akan kita gunakan (Auth & Firestore)
 export const auth = getAuth(app);
