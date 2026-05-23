@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  doc,
+  setDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import { db } from "../../../lib/firebase";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -12,6 +20,8 @@ interface Patient {
   phase: string;
   adherence: number;
   status: string;
+  alasanNonaktif?: string; // 🔹 TAMBAHAN
+  catatanNonaktif?: string;
 }
 
 function PatientListContent() {
@@ -24,12 +34,22 @@ function PatientListContent() {
   const [isStatusActiveFilter, setIsStatusActiveFilter] =
     useState<boolean>(true);
 
-  const searchParams = useSearchParams(); // SEKARANG AMAN KARENA ADA DI BAWAH SUSPENSE
+  // 🔹 STATE BARU UNTUK MODAL NONAKTIF
+  const [deactivateData, setDeactivateData] = useState({
+    isOpen: false,
+    patientId: "",
+    patientName: "",
+    reason: "Sembuh",
+    notes: "",
+  });
+  const [isDeactivating, setIsDeactivating] = useState(false);
+
+  const searchParams = useSearchParams();
   const searchQuery = searchParams.get("search") || "";
   const router = useRouter();
 
   useEffect(() => {
-    let isMounted = true; // Flag cleanup
+    let isMounted = true;
 
     const fetchPatients = async () => {
       try {
@@ -45,18 +65,15 @@ function PatientListContent() {
             currentPhase === "Lanjutan"
               ? userData.totalLanjutan || 48
               : userData.totalIntensif || 56;
-
           const obatDiminumFaseAktif =
             currentPhase === "Lanjutan"
               ? userData.diminumLanjutan || 0
               : userData.diminumIntensif || 0;
 
-          // 🔹 PERBAIKAN LOGIKA: Samakan dengan Running Adherence di Dashboard
           let expectedDoses = totalObatFaseAktif;
 
           if (userData.createdAt) {
             let startDate: Date;
-
             if (typeof userData.createdAt.toDate === "function") {
               startDate = userData.createdAt.toDate();
             } else if (
@@ -97,6 +114,8 @@ function PatientListContent() {
             phase: currentPhase,
             adherence: adherenceRate,
             status: userData.status || "Aktif",
+            alasanNonaktif: userData.alasanNonaktif || "", // 🔹 TAMBAHAN
+            catatanNonaktif: userData.catatanNonaktif || "",
           };
         });
 
@@ -127,8 +146,49 @@ function PatientListContent() {
     return matchesSearch && matchesPhase && matchesStatus;
   });
 
+  // 🔹 FUNGSI EKSEKUSI NONAKTIFKAN PASIEN
+  const submitDeactivation = async () => {
+    setIsDeactivating(true);
+    try {
+      const userRef = doc(db, "users", deactivateData.patientId);
+
+      // Simpan status dan alasannya ke Firebase
+      await setDoc(
+        userRef,
+        {
+          status: "Nonaktif",
+          alasanNonaktif: deactivateData.reason,
+          catatanNonaktif: deactivateData.notes,
+          tanggalNonaktif: new Date(),
+        },
+        { merge: true },
+      );
+
+      // Update UI langsung tanpa refresh
+      setPatients((prev) =>
+        prev.map((p) =>
+          p.id === deactivateData.patientId ? { ...p, status: "Nonaktif" } : p,
+        ),
+      );
+
+      // Tutup modal popup
+      setDeactivateData({
+        isOpen: false,
+        patientId: "",
+        patientName: "",
+        reason: "Sembuh",
+        notes: "",
+      });
+    } catch (error) {
+      console.error("Gagal menonaktifkan pasien:", error);
+      alert("Terjadi kesalahan sistem. Gagal mengubah status.");
+    } finally {
+      setIsDeactivating(false);
+    }
+  };
+
   return (
-    <div className="bg-white rounded-[20px] shadow-sm border border-gray-50 overflow-hidden">
+    <div className="bg-white rounded-[20px] shadow-sm border border-gray-50 overflow-hidden relative">
       {/* Filter Area */}
       <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
         <button
@@ -160,7 +220,7 @@ function PatientListContent() {
         </button>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto min-h-[400px]">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-[#f8faf9] text-[11px] uppercase tracking-wider font-bold text-gray-500 border-b border-gray-100">
@@ -213,10 +273,8 @@ function PatientListContent() {
                 </td>
               </tr>
             ) : (
-              // 🔹 RENDERING MENGGUNAKAN DATA YANG SUDAH DI-FILTER
               filteredPatients.map((patient, index) => {
                 let badgeClass = "bg-gray-200 text-gray-600";
-
                 const isNearBottom =
                   index >= filteredPatients.length - 2 &&
                   filteredPatients.length > 2;
@@ -256,19 +314,47 @@ function PatientListContent() {
                       </div>
                     </td>
                     <td className="px-6 py-5">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-2 h-2 rounded-full ${patient.status === "Aktif" ? "bg-[#2E7D32]" : "bg-gray-400"}`}
-                        ></div>
-                        <span
-                          className={`font-medium text-sm ${patient.status === "Aktif" ? "text-gray-900" : "text-gray-500"}`}
-                        >
-                          {patient.status}
-                        </span>
-                      </div>
+                      {patient.status === "Aktif" ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-[#2E7D32] shadow-[0_0_8px_rgba(46,125,50,0.4)]"></div>
+                          <span className="font-medium text-sm text-gray-900">
+                            Aktif
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {/* Titik abu-abu penanda nonaktif */}
+                          <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+
+                          {/* Langsung tampilkan alasannya sebagai status */}
+                          <span className="font-medium text-sm text-gray-500 max-w-[150px] truncate">
+                            {patient.alasanNonaktif || "Nonaktif"}
+                          </span>
+
+                          {/* Ikon info yang memunculkan catatan saat di-hover */}
+                          {patient.catatanNonaktif && (
+                            <div
+                              className="text-gray-400 hover:text-gray-700 cursor-help transition-colors"
+                              title={`Catatan: ${patient.catatanNonaktif}`}
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                ></path>
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
-                    {/* 🔹 Kolom Aksi dengan Dropdown */}
-                    {/* 🔹 Kolom Aksi dengan Dropdown (SUDAH DIBERSIHKAN) */}
                     <td className="px-6 py-5 text-right relative">
                       <button
                         onClick={() =>
@@ -288,21 +374,17 @@ function PatientListContent() {
                         </svg>
                       </button>
 
-                      {/* 🔹 Kotak Dropdown Menu */}
                       {openDropdownId === patient.id && (
                         <>
-                          {/* Lapisan transparan untuk menutup dropdown jika klik di luar */}
                           <div
                             className="fixed inset-0 z-40"
                             onClick={() => setOpenDropdownId(null)}
                           ></div>
-
-                          {/* 🔹 Dropdown melayang ke atas (bottom-full mb-2) */}
                           <div
                             className={`absolute right-10 w-48 bg-white rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] border border-gray-100 z-50 overflow-hidden text-left animate-in fade-in zoom-in-95 duration-200 ${
                               isNearBottom
-                                ? "bottom-full mb-2 origin-bottom-right" // Buka ke atas (untuk baris bawah)
-                                : "top-full mt-2 origin-top-right" // Buka ke bawah (untuk baris atas)
+                                ? "bottom-full mb-2 origin-bottom-right"
+                                : "top-full mt-2 origin-top-right"
                             }`}
                           >
                             <button
@@ -325,15 +407,16 @@ function PatientListContent() {
                               Edit Profil
                             </button>
                             <div className="border-t border-gray-100"></div>
+
+                            {/* 🔹 TOMBOL TRIGGER CUSTOM MODAL */}
                             <button
                               onClick={() => {
-                                const confirmStatus = confirm(
-                                  `Apakah Anda yakin ingin menonaktifkan pasien ${patient.name} (Misal: Sembuh/Pindah)?`,
-                                );
-                                if (confirmStatus)
-                                  alert(
-                                    "Status pasien diubah menjadi Nonaktif.",
-                                  );
+                                setDeactivateData({
+                                  ...deactivateData,
+                                  isOpen: true,
+                                  patientId: patient.id,
+                                  patientName: patient.name,
+                                });
                                 setOpenDropdownId(null);
                               }}
                               className="w-full px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
@@ -351,14 +434,351 @@ function PatientListContent() {
           </tbody>
         </table>
       </div>
+
+      {/* 💥 MODAL CUSTOM: NONAKTIFKAN PASIEN */}
+      {deactivateData.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"
+            onClick={() =>
+              !isDeactivating &&
+              setDeactivateData({ ...deactivateData, isOpen: false })
+            }
+          ></div>
+
+          <div className="relative bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 bg-red-50/50 border-b border-red-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-red-800">
+                  Nonaktifkan Pasien
+                </h3>
+                <p className="text-sm text-red-600/80 mt-0.5">
+                  Ubah status operasional pasien.
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  setDeactivateData({ ...deactivateData, isOpen: false })
+                }
+                disabled={isDeactivating}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-sm disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <p className="text-sm text-gray-600">
+                  Anda akan menonaktifkan akun pemantauan untuk:
+                </p>
+                <p className="text-lg font-bold text-gray-900 mt-1">
+                  {deactivateData.patientName}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Alasan Penonaktifan *
+                </label>
+                <select
+                  value={deactivateData.reason}
+                  onChange={(e) =>
+                    setDeactivateData({
+                      ...deactivateData,
+                      reason: e.target.value,
+                    })
+                  }
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 block px-4 py-3 outline-none cursor-pointer transition-all"
+                >
+                  <option value="Sembuh (Pengobatan Selesai)">
+                    Sembuh (Pengobatan Selesai)
+                  </option>
+                  <option value="Pindah Faskes">Pindah Faskes</option>
+                  <option value="Meninggal Dunia">Meninggal Dunia</option>
+                  <option value="Drop Out / Mangkir Total">
+                    Drop Out / Mangkir Total
+                  </option>
+                  <option value="Gagal Pengobatan">Gagal Pengobatan</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Catatan Tambahan (Opsional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={deactivateData.notes}
+                  onChange={(e) =>
+                    setDeactivateData({
+                      ...deactivateData,
+                      notes: e.target.value,
+                    })
+                  }
+                  placeholder="Tambahkan keterangan spesifik jika diperlukan..."
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 block px-4 py-3 outline-none transition-all resize-none"
+                ></textarea>
+              </div>
+            </div>
+
+            <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+              <button
+                onClick={() =>
+                  setDeactivateData({ ...deactivateData, isOpen: false })
+                }
+                disabled={isDeactivating}
+                className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={submitDeactivation}
+                disabled={isDeactivating}
+                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl shadow-md transition-all flex items-center justify-center min-w-[140px] disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isDeactivating ? (
+                  <svg
+                    className="animate-spin h-5 w-5 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                ) : (
+                  "Nonaktifkan Pasien"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 // 2. EXPORT DEFAULT HALAMAN YANG SUDAH DIBUNGKUS SUSPENSE
 export default function DataPasienPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [successModal, setSuccessModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
+
+  // State untuk form input
+  const [formData, setFormData] = useState({
+    fullName: "",
+    nickName: "",
+    email: "",
+    ageGroup: "Dewasa", // Dewasa / Anak
+    kategoriObat: "Kategori 1",
+    weight: "", // 🔹 TAMBAHAN: Untuk input berat badan
+    reminderTime: "08:00",
+  });
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleDaftarPasien = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.fullName || !formData.email || !formData.weight) {
+      alert("Nama, Email, dan Berat Badan wajib diisi!");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // 1. Siapkan Waktu dan ID
+      const timestampNow = Date.now();
+      const newUID = `USR-${timestampNow}`;
+      const today = new Date();
+
+      // 2. Konversi waktu dari 24 jam (Form web) ke 12 jam AM/PM (Flutter)
+      const [hourStr, minuteStr] = formData.reminderTime.split(":");
+      let hour = parseInt(hourStr, 10);
+      const ampm = hour >= 12 ? "PM" : "AM";
+      hour = hour % 12 || 12;
+      const formattedReminderTime = `${hour.toString().padStart(2, "0")}:${minuteStr} ${ampm}`;
+
+      // =========================================================
+      // 🔥 LOGIKA DOSIS BERAT BADAN (Diterjemahkan 1:1 dari Flutter TBMate)
+      // =========================================================
+      let tahapIntensif = "";
+      let tahapLanjutan = "";
+      let namaObat = "";
+      let jumlahTablet = 0;
+      const bb = Number(formData.weight);
+
+      if (bb >= 5 && bb <= 9) {
+        tahapIntensif = "1 tablet RHZ (75/50/150)";
+        tahapLanjutan = "1 tablet RH (75/50)";
+        namaObat = "RHZ / RH";
+        jumlahTablet = 1;
+      } else if (bb >= 10 && bb <= 14) {
+        tahapIntensif = "2 tablet RHZ (75/50/150)";
+        tahapLanjutan = "2 tablet RH (75/50)";
+        namaObat = "RHZ / RH";
+        jumlahTablet = 2;
+      } else if (bb >= 15 && bb <= 19) {
+        tahapIntensif = "3 tablet RHZ (75/50/150)";
+        tahapLanjutan = "3 tablet RH (75/50)";
+        namaObat = "RHZ / RH";
+        jumlahTablet = 3;
+      } else if (bb >= 20 && bb <= 30) {
+        tahapIntensif = "4 tablet RHZ (75/50/150)";
+        tahapLanjutan = "4 tablet RH (75/50)";
+        namaObat = "RHZ / RH";
+        jumlahTablet = 4;
+      } else if (bb >= 31 && bb <= 37) {
+        tahapIntensif = "2 tablet RHZE (150/75/400/275)";
+        tahapLanjutan = "2 tablet RH (150/150)";
+        namaObat = "4 KDT RHZE";
+        jumlahTablet = 2;
+      } else if (bb >= 38 && bb <= 54) {
+        tahapIntensif = "3 tablet RHZE (150/75/400/275)";
+        tahapLanjutan = "3 tablet RH (150/150)";
+        namaObat = "4 KDT RHZE";
+        jumlahTablet = 3;
+      } else if (bb >= 55 && bb <= 70) {
+        tahapIntensif = "4 tablet RHZE (150/75/400/275)";
+        tahapLanjutan = "4 tablet RH (150/150)";
+        namaObat = "4 KDT RHZE";
+        jumlahTablet = 4;
+      } else if (bb >= 71) {
+        tahapIntensif = "5 tablet RHZE (150/75/400/275)";
+        tahapLanjutan = "5 tablet RH (150/150)";
+        namaObat = "4 KDT RHZE";
+        jumlahTablet = 5;
+      }
+
+      // =========================================================
+      // 🚀 MULAI PENYIMPANAN BATCH FIREBASE
+      // =========================================================
+      const batch = writeBatch(db);
+
+      // A. Simpan Profil Utama Pasien
+      const pasienBaruRef = doc(db, "users", newUID);
+      batch.set(pasienBaruRef, {
+        uniqueId: newUID,
+        email: formData.email,
+        role: "Pasien",
+        fullName: formData.fullName,
+        nickName: formData.nickName || formData.fullName.split(" ")[0],
+        ageGroup: formData.ageGroup,
+        weight: bb,
+        reminderTime: formattedReminderTime,
+        createdAt: today,
+        currentPhase: "Intensif",
+        totalIntensif: 56,
+        diminumIntensif: 0,
+        totalLanjutan: 48,
+        diminumLanjutan: 0,
+        status: "Aktif",
+      });
+
+      // B. Generate 56 Hari Fase Intensif (Setiap Hari)
+      for (let i = 0; i < 56; i++) {
+        const scheduleDate = new Date(today);
+        scheduleDate.setDate(today.getDate() + i);
+        const formattedDate = scheduleDate.toLocaleDateString("en-CA"); // YYYY-MM-DD
+
+        const jadwalRef = doc(collection(db, `users/${newUID}/jadwal_obat`));
+        batch.set(jadwalRef, {
+          userId: newUID,
+          nama_obat: namaObat,
+          fase: "Intensif",
+          dosis: tahapIntensif,
+          jumlah_tablet: jumlahTablet,
+          waktu_minum: formattedReminderTime,
+          status: "Belum diminum",
+          tanggal: formattedDate,
+          berat_badan: bb,
+          createdAt: today, // Menggunakan waktu yang sama agar seragam
+          verifikasi_ai: "Belum",
+          skor_ai: 0,
+        });
+      }
+
+      // C. Generate 16 Minggu Fase Lanjutan (Hanya Hari ke-1, 3, dan 5)
+      for (let week = 0; week < 16; week++) {
+        for (let day = 0; day < 7; day++) {
+          if (day === 1 || day === 3 || day === 5) {
+            const scheduleDate = new Date(today);
+            scheduleDate.setDate(today.getDate() + 56 + week * 7 + day);
+            const formattedDate = scheduleDate.toLocaleDateString("en-CA");
+
+            const jadwalRef = doc(
+              collection(db, `users/${newUID}/jadwal_obat`),
+            );
+            batch.set(jadwalRef, {
+              userId: newUID,
+              nama_obat: namaObat,
+              fase: "Lanjutan",
+              dosis: tahapLanjutan,
+              jumlah_tablet: jumlahTablet,
+              waktu_minum: formattedReminderTime,
+              status: "Belum diminum",
+              tanggal: formattedDate,
+              berat_badan: bb,
+              createdAt: today,
+              verifikasi_ai: "Belum",
+              skor_ai: 0,
+            });
+          }
+        }
+      }
+
+      // 4. Eksekusi Total 105 Dokumen (1 User + 56 Intensif + 48 Lanjutan) dalam 1 Detik
+      await batch.commit();
+
+      // Tutup form pendaftaran & kosongkan input
+      setIsModalOpen(false);
+      setFormData({
+        fullName: "",
+        nickName: "",
+        email: "",
+        ageGroup: "Dewasa",
+        kategoriObat: "Kategori 1",
+        weight: "",
+        reminderTime: "08:00",
+      });
+
+      // 🔹 TAMPILKAN MODAL SUKSES KUSTOM (Jangan langsung di-reload)
+      setSuccessModal({
+        isOpen: true,
+        title: "Pendaftaran Berhasil!",
+        message: `Pasien ${formData.fullName} berhasil didaftarkan. Total 104 jadwal obat telah dibuat otomatis dengan resep ${namaObat}.`,
+      });
+    } catch (error) {
+      console.error("Gagal mendaftar pasien:", error);
+      alert("Terjadi kesalahan saat mendaftarkan pasien.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <div className="space-y-8">
-      {/* Header Halaman (Dirender instan tanpa menunggu client-side data) */}
+    <div className="space-y-8 relative">
+      {/* Header Halaman */}
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -369,14 +789,14 @@ export default function DataPasienPage() {
           </p>
         </div>
         <button
-          onClick={() => alert("Membuka form pendaftaran...")}
-          className="bg-[#2E7D32] hover:bg-green-800 text-white font-medium py-2.5 px-5 rounded-xl shadow-sm text-sm flex items-center gap-2"
+          onClick={() => setIsModalOpen(true)}
+          className="bg-[#2E7D32] hover:bg-green-800 text-white font-medium py-2.5 px-5 rounded-xl shadow-[0_4px_14px_0_rgba(46,125,50,0.39)] transition-all text-sm flex items-center gap-2"
         >
-          <span>+</span> Daftarkan Pasien Baru
+          <span className="text-lg leading-none">+</span> Daftarkan Pasien Baru
         </button>
       </div>
 
-      {/* 3. Komponen yang butuh `useSearchParams` dibungkus Suspense */}
+      {/* 3. Komponen Tabel Pasien */}
       <Suspense
         fallback={
           <div className="text-center py-10 text-gray-500">
@@ -386,6 +806,243 @@ export default function DataPasienPage() {
       >
         <PatientListContent />
       </Suspense>
+
+      {/* 🔹 MODAL PENDAFTARAN PASIEN BARU */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Latar Belakang Gelap */}
+          <div
+            className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"
+            onClick={() => !isSubmitting && setIsModalOpen(false)}
+          ></div>
+
+          {/* Kotak Form */}
+          <div className="relative bg-white rounded-[24px] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 bg-green-50/50 border-b border-green-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">
+                  Pendaftaran Pasien TBMate
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Isi data dasar pasien untuk memulai pemantauan.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                disabled={isSubmitting}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors shadow-sm disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleDaftarPasien} className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Nama Lengkap *
+                  </label>
+                  <input
+                    type="text"
+                    name="fullName"
+                    value={formData.fullName}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Contoh: Budi Santoso"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Nama Panggilan *
+                  </label>
+                  <input
+                    type="text"
+                    name="nickName"
+                    value={formData.nickName}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Contoh: Budi"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Alamat Email *
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                  placeholder="budi@example.com (Untuk Login Mobile)"
+                  className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Kelompok Usia
+                  </label>
+                  <select
+                    name="ageGroup"
+                    value={formData.ageGroup}
+                    onChange={handleInputChange}
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none cursor-pointer"
+                  >
+                    <option value="Dewasa">Dewasa</option>
+                    <option value="Anak">Anak-anak</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Kategori Obat
+                  </label>
+                  <select
+                    name="kategoriObat"
+                    value={formData.kategoriObat}
+                    onChange={handleInputChange}
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none cursor-pointer"
+                  >
+                    <option value="Kategori 1">Kategori 1 (Baru)</option>
+                    <option value="Kategori 2">Kategori 2 (Kambuh)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Berat Badan (KG) *
+                  </label>
+                  <input
+                    type="number"
+                    name="weight"
+                    value={formData.weight}
+                    onChange={handleInputChange}
+                    required
+                    min="1"
+                    placeholder="Misal: 55"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Jam Pengingat vDOT
+                  </label>
+                  <input
+                    type="time"
+                    name="reminderTime"
+                    value={formData.reminderTime}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-[#2E7D32]/20 focus:border-[#2E7D32] block px-4 py-3 outline-none cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl mt-2">
+                <p className="text-xs text-blue-800 leading-relaxed font-medium">
+                  <span className="font-bold">Catatan Sistem:</span> Pasien baru
+                  otomatis akan dimasukkan ke{" "}
+                  <span className="font-bold">Fase Intensif</span> dengan target
+                  56 dosis (Hari). UID Pasien akan di-generate otomatis oleh
+                  sistem setelah formulir disimpan.
+                </p>
+              </div>
+
+              <div className="border-t border-gray-100 pt-5 mt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-6 py-2.5 bg-[#2E7D32] hover:bg-green-800 text-white text-sm font-bold rounded-xl shadow-md transition-all flex items-center justify-center min-w-[140px] disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <svg
+                      className="animate-spin h-5 w-5 text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                  ) : (
+                    "Simpan Data Pasien"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {successModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"></div>
+
+          <div className="relative bg-white rounded-[24px] shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-center p-8">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+              <svg
+                className="w-8 h-8 text-[#2E7D32]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="3"
+                  d="M5 13l4 4L19 7"
+                ></path>
+              </svg>
+            </div>
+
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              {successModal.title}
+            </h3>
+            <p className="text-sm text-gray-500 leading-relaxed mb-8">
+              {successModal.message}
+            </p>
+
+            <button
+              onClick={() => {
+                setSuccessModal({ ...successModal, isOpen: false });
+                window.location.reload();
+              }}
+              className="w-full py-3 bg-[#2E7D32] hover:bg-green-800 text-white text-sm font-bold rounded-xl shadow-md transition-all"
+            >
+              Tutup & Refresh Data
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
