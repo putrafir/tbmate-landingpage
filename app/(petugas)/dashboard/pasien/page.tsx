@@ -15,6 +15,9 @@ import { db, app } from "../../../lib/firebase";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { useSearchParams, useRouter } from "next/navigation";
 
+// ============================================================================
+// TYPE DEFINITION
+// ============================================================================
 interface Patient {
   id: string;
   uid: string;
@@ -22,10 +25,14 @@ interface Patient {
   phase: string;
   adherence: number;
   status: string;
-  alasanNonaktif?: string; // 🔹 TAMBAHAN
+  alasanNonaktif?: string;
   catatanNonaktif?: string;
 }
 
+// ============================================================================
+// 1. KOMPONEN ANAK (Memuat logika useSearchParams)
+// Komponen ini HARUS berada di dalam <Suspense> dari parent-nya
+// ============================================================================
 function PatientListContent() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,7 +43,6 @@ function PatientListContent() {
   const [isStatusActiveFilter, setIsStatusActiveFilter] =
     useState<boolean>(true);
 
-  // 🔹 STATE BARU UNTUK MODAL NONAKTIF
   const [deactivateData, setDeactivateData] = useState({
     isOpen: false,
     patientId: "",
@@ -46,6 +52,7 @@ function PatientListContent() {
   });
   const [isDeactivating, setIsDeactivating] = useState(false);
 
+  // 💡 MENGGUNAKAN useSearchParams()
   const searchParams = useSearchParams();
   const searchQuery = searchParams.get("search") || "";
   const router = useRouter();
@@ -116,7 +123,7 @@ function PatientListContent() {
             phase: currentPhase,
             adherence: adherenceRate,
             status: userData.status || "Aktif",
-            alasanNonaktif: userData.alasanNonaktif || "", // 🔹 TAMBAHAN
+            alasanNonaktif: userData.alasanNonaktif || "",
             catatanNonaktif: userData.catatanNonaktif || "",
           };
         });
@@ -148,13 +155,11 @@ function PatientListContent() {
     return matchesSearch && matchesPhase && matchesStatus;
   });
 
-  // 🔹 FUNGSI EKSEKUSI NONAKTIFKAN PASIEN
   const submitDeactivation = async () => {
     setIsDeactivating(true);
     try {
       const userRef = doc(db, "users", deactivateData.patientId);
 
-      // Simpan status dan alasannya ke Firebase
       await setDoc(
         userRef,
         {
@@ -166,14 +171,12 @@ function PatientListContent() {
         { merge: true },
       );
 
-      // Update UI langsung tanpa refresh
       setPatients((prev) =>
         prev.map((p) =>
           p.id === deactivateData.patientId ? { ...p, status: "Nonaktif" } : p,
         ),
       );
 
-      // Tutup modal popup
       setDeactivateData({
         isOpen: false,
         patientId: "",
@@ -190,24 +193,36 @@ function PatientListContent() {
   };
 
   return (
-    <div className="bg-white rounded-[20px] shadow-sm border border-gray-50 overflow-hidden relative">
+    <div className="bg-white rounded-[20px] shadow-sm border border-gray-50 overflow-hidden relative mt-8">
       {/* Filter Area */}
       <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
         <button
           onClick={() => setSelectedPhaseFilter("Semua")}
-          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${selectedPhaseFilter === "Semua" ? "border border-[#2E7D32] text-[#2E7D32] bg-green-50/50" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${
+            selectedPhaseFilter === "Semua"
+              ? "border border-[#2E7D32] text-[#2E7D32] bg-green-50/50"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
         >
           Semua Fase
         </button>
         <button
           onClick={() => setSelectedPhaseFilter("Intensif")}
-          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${selectedPhaseFilter === "Intensif" ? "border border-[#2E7D32] text-[#2E7D32] bg-green-50/50" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${
+            selectedPhaseFilter === "Intensif"
+              ? "border border-[#2E7D32] text-[#2E7D32] bg-green-50/50"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
         >
           Fase Intensif
         </button>
         <button
           onClick={() => setSelectedPhaseFilter("Lanjutan")}
-          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${selectedPhaseFilter === "Lanjutan" ? "border border-[#2E7D32] text-[#2E7D32] bg-green-50/50" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${
+            selectedPhaseFilter === "Lanjutan"
+              ? "border border-[#2E7D32] text-[#2E7D32] bg-green-50/50"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
         >
           Fase Lanjutan
         </button>
@@ -216,7 +231,11 @@ function PatientListContent() {
 
         <button
           onClick={() => setIsStatusActiveFilter(!isStatusActiveFilter)}
-          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${isStatusActiveFilter ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all ${
+            isStatusActiveFilter
+              ? "bg-gray-800 text-white"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
         >
           {isStatusActiveFilter ? "Status: Aktif Only" : "Semua Status"}
         </button>
@@ -306,7 +325,13 @@ function PatientListContent() {
                       <div className="flex items-center gap-3 w-40">
                         <div className="w-full bg-gray-200 rounded-full h-1.5">
                           <div
-                            className={`h-1.5 rounded-full ${patient.adherence < 50 ? "bg-red-500" : patient.adherence < 80 ? "bg-yellow-500" : "bg-[#2E7D32]"}`}
+                            className={`h-1.5 rounded-full ${
+                              patient.adherence < 50
+                                ? "bg-red-500"
+                                : patient.adherence < 80
+                                  ? "bg-yellow-500"
+                                  : "bg-[#2E7D32]"
+                            }`}
                             style={{ width: `${patient.adherence}%` }}
                           ></div>
                         </div>
@@ -325,15 +350,10 @@ function PatientListContent() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          {/* Titik abu-abu penanda nonaktif */}
                           <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-
-                          {/* Langsung tampilkan alasannya sebagai status */}
                           <span className="font-medium text-sm text-gray-500 max-w-[150px] truncate">
                             {patient.alasanNonaktif || "Nonaktif"}
                           </span>
-
-                          {/* Ikon info yang memunculkan catatan saat di-hover */}
                           {patient.catatanNonaktif && (
                             <div
                               className="text-gray-400 hover:text-gray-700 cursor-help transition-colors"
@@ -409,8 +429,6 @@ function PatientListContent() {
                               Edit Profil
                             </button>
                             <div className="border-t border-gray-100"></div>
-
-                            {/* 🔹 TOMBOL TRIGGER CUSTOM MODAL */}
                             <button
                               onClick={() => {
                                 setDeactivateData({
@@ -447,7 +465,6 @@ function PatientListContent() {
               setDeactivateData({ ...deactivateData, isOpen: false })
             }
           ></div>
-
           <div className="relative bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 bg-red-50/50 border-b border-red-100 flex justify-between items-center">
               <div>
@@ -571,7 +588,10 @@ function PatientListContent() {
     </div>
   );
 }
-// 2. EXPORT DEFAULT HALAMAN YANG SUDAH DIBUNGKUS SUSPENSE
+
+// ============================================================================
+// 2. HALAMAN UTAMA (Membungkus fungsi anak dengan Suspense)
+// ============================================================================
 export default function DataPasienPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -582,12 +602,11 @@ export default function DataPasienPage() {
     message: "",
   });
 
-  // 1. 🔹 TAMBAHKAN PASSWORD KE STATE
   const [formData, setFormData] = useState({
     fullName: "",
     nickName: "",
     email: "",
-    password: "", // <-- Baru
+    password: "",
     ageGroup: "Dewasa",
     kategoriObat: "Kategori 1",
     weight: "",
@@ -620,10 +639,6 @@ export default function DataPasienPage() {
 
     setIsSubmitting(true);
     try {
-      // =========================================================
-      // 🔥 1. BUAT AKUN FIREBASE AUTH (Tanpa Me-logout Admin)
-      // =========================================================
-      // Kita buat 'SecondaryApp' bayangan untuk mendaftarkan pasien
       const secondaryApp =
         getApps().find((a) => a.name === "SecondaryApp") ||
         initializeApp(app.options, "SecondaryApp");
@@ -634,16 +649,12 @@ export default function DataPasienPage() {
         formData.email,
         formData.password,
       );
-      const authUID = userCredential.user.uid; // 🔹 Ini UID asli dari Auth!
+      const authUID = userCredential.user.uid;
 
-      // Logout dari aplikasi bayangan agar bersih
       await secondaryAuth.signOut();
 
-      // =========================================================
-      // 🔥 2. PERSIAPAN DATA FIRESTORE
-      // =========================================================
       const timestampNow = Date.now();
-      const displayUID = `USR-${timestampNow}`; // Tetap pakai ini untuk visual/display ID
+      const displayUID = `USR-${timestampNow}`;
       const today = new Date();
 
       const [hourStr, minuteStr] = formData.reminderTime.split(":");
@@ -658,7 +669,6 @@ export default function DataPasienPage() {
       let jumlahTablet = 0;
       const bb = Number(formData.weight);
 
-      // (Logika Dosis Tetap Sama persis dengan sebelumnya)
       if (bb >= 5 && bb <= 9) {
         tahapIntensif = "1 tablet RHZ (75/50/150)";
         tahapLanjutan = "1 tablet RH (75/50)";
@@ -701,15 +711,11 @@ export default function DataPasienPage() {
         jumlahTablet = 5;
       }
 
-      // =========================================================
-      // 🚀 3. MULAI PENYIMPANAN BATCH KE FIRESTORE
-      // =========================================================
       const batch = writeBatch(db);
 
-      // A. Simpan Profil (Gunakan authUID sebagai Document ID!)
       const pasienBaruRef = doc(db, "users", authUID);
       batch.set(pasienBaruRef, {
-        uniqueId: displayUID, // Disimpan sebagai field data
+        uniqueId: displayUID,
         email: formData.email,
         role: "Pasien",
         fullName: formData.fullName,
@@ -726,13 +732,11 @@ export default function DataPasienPage() {
         status: "Aktif",
       });
 
-      // B. Generate 56 Hari Fase Intensif
       for (let i = 0; i < 56; i++) {
         const scheduleDate = new Date(today);
         scheduleDate.setDate(today.getDate() + i);
         const formattedDate = scheduleDate.toLocaleDateString("en-CA");
 
-        // Perhatikan jalurnya sekarang menggunakan authUID
         const jadwalRef = doc(collection(db, `users/${authUID}/jadwal_obat`));
         batch.set(jadwalRef, {
           userId: authUID,
@@ -750,7 +754,6 @@ export default function DataPasienPage() {
         });
       }
 
-      // C. Generate 16 Minggu Fase Lanjutan
       for (let week = 0; week < 16; week++) {
         for (let day = 0; day < 7; day++) {
           if (day === 1 || day === 3 || day === 5) {
@@ -786,7 +789,7 @@ export default function DataPasienPage() {
         fullName: "",
         nickName: "",
         email: "",
-        password: "", // Kosongkan form
+        password: "",
         ageGroup: "Dewasa",
         kategoriObat: "Kategori 1",
         weight: "",
@@ -801,7 +804,7 @@ export default function DataPasienPage() {
 
       setTimeout(() => {
         setSuccessModal({ isOpen: false, title: "", message: "" });
-        window.location.reload(); // Refresh halaman secara otomatis
+        window.location.reload();
       }, 3000);
     } catch (error) {
       console.error("Gagal mendaftar pasien:", error);
@@ -832,10 +835,11 @@ export default function DataPasienPage() {
         </button>
       </div>
 
+      {/* 💡 INI BAGIAN PENTING: Suspense Membungkus Komponen yang menggunakan useSearchParams */}
       <Suspense
         fallback={
-          <div className="text-center py-10 text-gray-500">
-            Memuat antarmuka data...
+          <div className="text-center py-10 text-gray-500 animate-pulse">
+            Memuat daftar pasien...
           </div>
         }
       >
@@ -900,7 +904,6 @@ export default function DataPasienPage() {
                 </div>
               </div>
 
-              {/* 2. 🔹 FORM INPUT EMAIL & PASSWORD (DISATUKAN) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
@@ -1053,7 +1056,6 @@ export default function DataPasienPage() {
               {successModal.message}
             </p>
 
-            {/* 🔹 PENGGANTI TOMBOL: Indikator Auto-Refresh */}
             <div className="flex items-center justify-center gap-2 text-sm font-bold text-[#2E7D32] animate-pulse">
               <svg
                 className="animate-spin h-5 w-5"
