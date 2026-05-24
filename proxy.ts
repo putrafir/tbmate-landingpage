@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Cek apakah user sedang mencoba mengakses area dashboard
   const isDashboardPage = request.nextUrl.pathname.startsWith("/dashboard");
 
