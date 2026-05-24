@@ -96,7 +96,8 @@ export default function Navbar() {
 
         <div className="hidden md:block">
           <a
-            href="#download"
+            href="/TBMate-v1.0.apk"
+            download
             className="bg-primary-green text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-green-800 transition-all shadow-md hover:shadow-lg"
           >
             Download APK

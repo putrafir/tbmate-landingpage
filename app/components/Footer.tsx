@@ -82,7 +82,9 @@ export default function Footer() {
             variants={itemVariants}
             className="flex flex-col sm:flex-row gap-4 w-full md:w-auto shrink-0"
           >
-            <motion.button
+            <motion.a
+              href="/TBMate-v1.0.apk"
+              download
               whileHover={{ y: -5, transition: { duration: 0.2 } }}
               className="bg-white text-[#2E7D32] font-bold px-6 py-3.5 md:px-8 md:py-4 rounded-xl flex items-center justify-center gap-2 text-sm md:text-base shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:bg-gray-50 hover:shadow-xl transition-shadow duration-300 w-full sm:w-auto"
             >
@@ -100,7 +102,7 @@ export default function Footer() {
                 ></path>
               </svg>
               Unduh TBMate
-            </motion.button>
+            </motion.a>
 
             {/* 3. Gunakan MotionLink, tanpa passHref & legacyBehavior */}
             <MotionLink

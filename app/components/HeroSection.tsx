@@ -83,7 +83,11 @@ export default function HeroSection() {
             variants={textItem}
             className="flex flex-col sm:flex-row flex-wrap justify-center lg:justify-start gap-4 w-full sm:w-auto"
           >
-            <button className="flex justify-center items-center gap-2 bg-[#2E7D32] text-white px-6 py-3 md:px-8 md:py-4 rounded-full font-semibold hover:bg-green-800 transition-colors shadow-lg shadow-green-900/20 text-base md:text-lg w-full sm:w-auto">
+            <a
+              href="/TBMate-v1.0.apk"
+              download="TBMate-v1.0.apk"
+              className="flex justify-center items-center gap-2 bg-[#2E7D32] text-white px-6 py-3 md:px-8 md:py-4 rounded-full font-semibold hover:bg-green-800 transition-colors shadow-lg shadow-green-900/20 text-base md:text-lg w-full sm:w-auto"
+            >
               <svg
                 className="w-5 h-5"
                 fill="none"
@@ -98,7 +102,7 @@ export default function HeroSection() {
                 ></path>
               </svg>
               Download APK
-            </button>
+            </a>
 
             <button className="flex justify-center items-center gap-2 bg-white border border-gray-200 text-[#0052CC] px-6 py-3 md:px-8 md:py-4 rounded-full font-semibold hover:border-[#0052CC] transition-colors text-base md:text-lg w-full sm:w-auto">
               <svg
