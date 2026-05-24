@@ -13,11 +13,8 @@ import {
 import { getApps, initializeApp } from "firebase/app";
 import { db, app } from "../../../lib/firebase";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation"; // 💡 KEMBALI MENGGUNAKAN useSearchParams
 
-// ============================================================================
-// TYPE DEFINITION
-// ============================================================================
 interface Patient {
   id: string;
   uid: string;
@@ -30,8 +27,7 @@ interface Patient {
 }
 
 // ============================================================================
-// 1. KOMPONEN ANAK (Memuat logika useSearchParams)
-// Komponen ini HARUS berada di dalam <Suspense> dari parent-nya
+// 1. KOMPONEN ANAK (Aman dari ESLint & Vercel)
 // ============================================================================
 function PatientListContent() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -43,6 +39,12 @@ function PatientListContent() {
   const [isStatusActiveFilter, setIsStatusActiveFilter] =
     useState<boolean>(true);
 
+  // 💡 MENGGUNAKAN CARA RESMI: Tidak perlu setState di dalam useEffect!
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.get("search") || "";
+
+  const router = useRouter();
+
   const [deactivateData, setDeactivateData] = useState({
     isOpen: false,
     patientId: "",
@@ -51,11 +53,6 @@ function PatientListContent() {
     notes: "",
   });
   const [isDeactivating, setIsDeactivating] = useState(false);
-
-  // 💡 MENGGUNAKAN useSearchParams()
-  const searchParams = useSearchParams();
-  const searchQuery = searchParams.get("search") || "";
-  const router = useRouter();
 
   useEffect(() => {
     let isMounted = true;
@@ -455,7 +452,7 @@ function PatientListContent() {
         </table>
       </div>
 
-      {/* 💥 MODAL CUSTOM: NONAKTIFKAN PASIEN */}
+      {/* MODAL CUSTOM: NONAKTIFKAN PASIEN */}
       {deactivateData.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div
@@ -590,9 +587,11 @@ function PatientListContent() {
 }
 
 // ============================================================================
-// 2. HALAMAN UTAMA (Membungkus fungsi anak dengan Suspense)
+// 2. HALAMAN UTAMA (Dengan Perisai isClient & Suspense)
 // ============================================================================
 export default function DataPasienPage() {
+  const [isClient, setIsClient] = useState(typeof window !== "undefined");
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -641,7 +640,7 @@ export default function DataPasienPage() {
     try {
       const secondaryApp =
         getApps().find((a) => a.name === "SecondaryApp") ||
-        initializeApp(app.options, "SecondaryApp");
+        initializeApp(app?.options || {}, "SecondaryApp");
       const secondaryAuth = getAuth(secondaryApp);
 
       const userCredential = await createUserWithEmailAndPassword(
@@ -816,6 +815,37 @@ export default function DataPasienPage() {
     }
   };
 
+  // 💡 CEK LOADING: Bypass Vercel Static Build (Prerender Error Firebase)
+  if (!isClient) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-10">
+        <div className="flex flex-col items-center gap-4 text-[#2E7D32]">
+          <svg
+            className="animate-spin h-8 w-8"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            ></circle>
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+          <p className="font-medium animate-pulse">Menyiapkan Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 relative">
       <div className="flex justify-between items-end">
@@ -835,7 +865,7 @@ export default function DataPasienPage() {
         </button>
       </div>
 
-      {/* 💡 INI BAGIAN PENTING: Suspense Membungkus Komponen yang menggunakan useSearchParams */}
+      {/* 💡 SOLUSI SUSPENSE (Mengatasi missing suspense boundary error) */}
       <Suspense
         fallback={
           <div className="text-center py-10 text-gray-500 animate-pulse">
